@@ -1,3 +1,4 @@
+extern crate arrayvec;
 extern crate futures;
 extern crate hyper;
 extern crate serde;
@@ -5,7 +6,8 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
-use std::collections::HashMap;
+mod prefix_tree;
+
 use hyper::{header};
 use futures::{future, IntoFuture, Future, Stream};
 
@@ -115,7 +117,7 @@ impl<'a> From<&'a hyper::Method> for Method {
 
 #[derive(Default)]
 pub struct Router {
-  routes: HashMap<(Method, String), BoxHandler>,
+  routes: prefix_tree::Tree<(Method, BoxHandler)>,
 }
 
 // TODO [ToDr] impl Debug
@@ -132,21 +134,18 @@ impl Router {
     E: Into<Error>,
     I::Future: 'static,
   {
-    self.routes.insert((Method::Get, prefix.to_owned()), Box::new(move |request| {
+    self.routes.insert(prefix, (Method::Get, Box::new(move |request| {
       Box::new(fun(request).into_future().then(|result| {
         future::ok(match result {
           Ok(res) => res.into(),
           Err(err) => err.into().into(),
         }.into())
       }))
-    }));
+    })));
   }
 
   pub fn add(&mut self, prefix: &str, router: Router) {
-    for (k, v) in router.routes {
-      // TODO parser prefixes
-      self.routes.insert((k.0, format!("{}{}", prefix, k.1)), v);
-    }
+    self.routes.merge(prefix, router.routes);
   }
 
   pub fn bind<T: ::std::net::ToSocketAddrs>(self, address: T) -> Result<Listening, hyper::Error> {
@@ -159,7 +158,7 @@ impl Router {
 }
 
 struct Server {
-  routes: ::std::sync::Arc<HashMap<(Method, String), BoxHandler>>,
+  routes: ::std::sync::Arc<prefix_tree::Tree<(Method, BoxHandler)>>,
 }
 impl hyper::server::Service for Server {
   type Request = hyper::Request;
@@ -170,10 +169,16 @@ impl hyper::server::Service for Server {
   fn call(&self, req: Self::Request) -> Self::Future {
     let path = req.uri().path().to_owned();
     let method = req.method().into();
-    match self.routes.get(&(method, path)) {
-      Some(router) => router(req.into()),
+    match self.routes.find(path) {
+      Some(&(ref m, ref router)) => {
+        if *m == method {
+          router(req.into())
+        } else {
+          Box::new(future::ok(hyper::Response::new()))
+        }
+      },
       // TODO 404 / method not allowed?
-      None => return Box::new(future::ok(hyper::Response::new()))
+      None => Box::new(future::ok(hyper::Response::new()))
     }
   }
 }
