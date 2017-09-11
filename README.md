@@ -7,7 +7,7 @@ Resty - a simple JSON REST-API framework for Rust.
 [travis-image]: https://travis-ci.org/tomusdrw/resty.svg?branch=master
 [travis-url]: https://travis-ci.org/tomusdrw/resty
 
-[Documentation](http://tomusdrw.github.io/rust-web3/index.html)
+[Documentation](http://docs.rs/resty)
 
 # Examples
 ```rust
