@@ -1,7 +1,7 @@
 //! Resty request wrapper.
 
 use hyper;
-use futures::{future, Stream, Future};
+use futures::{self, Stream, Future};
 use serde;
 use serde_json;
 
@@ -53,20 +53,27 @@ impl<P> Request<P> {
     self.params.take().unwrap()
   }
 
-  // TODO Don't require DeserializeOwned here!
   /// Read the body of this request and deserialize it from JSON.
   /// Returns error in case the request body cannot be read or deserialization fails.
-  pub fn json<'b, T: serde::de::DeserializeOwned + 'b>(self) -> Box<Future<Item = T, Error = Error> + 'b> {
-    Box::new(
-      self.request.body().concat2().then(|chunk| {
-        match chunk {
-          Ok(chunk) => match serde_json::from_slice(&*chunk) {
-            Ok(res) => future::ok(res),
-            Err(err) => future::err(Error::Serde(err)),
-          },
-          Err(err) => future::err(Error::Hyper(err)),
-        }
-      })
-    )
+  pub fn json<T>(self) -> JsonResult<T> where
+    T: for<'a> serde::de::Deserialize<'a>,
+  {
+    self.request.body().concat2().then(deserialize)
   }
 }
+
+fn deserialize<T: for<'a> serde::de::Deserialize<'a>>(chunk: Result<hyper::Chunk, hyper::Error>) -> Result<T, Error> {
+  match chunk {
+    Ok(chunk) => match serde_json::from_slice(&*chunk) {
+      Ok(res) => Ok(res),
+      Err(err) => Err(Error::Serde(err)),
+    },
+    Err(err) => Err(Error::Hyper(err)),
+  }
+}
+
+type JsonResult<T> = futures::Then<
+  futures::stream::Concat2<hyper::Body>,
+  Result<T, Error>,
+  fn(Result<hyper::Chunk, hyper::Error>) -> Result<T, Error>,
+>;
