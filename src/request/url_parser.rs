@@ -27,6 +27,13 @@ macro_rules! url_internal {
         impl $crate::request::params::Parser for MyParams {
             type Params = MyParams;
 
+            fn expected_params(&self) -> (usize, String) {
+                let mut count = 0;
+                let mut s = String::new();
+                printer!(count, s, $($data)*);
+                (count, s)
+            }
+
             fn parse(&self, uri: &$crate::Uri, skip: usize) -> Result<Self::Params, $crate::request::params::Error> {
                 let mut it = uri.path()[skip..].split('/');
                 parser!(it, $($data)*);
@@ -107,6 +114,22 @@ macro_rules! parser {
             error: format!("{:?}", e),
         })?;
         parser!($it, $($tail)*);
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! printer {
+    ($count:expr , $s:expr, ) => {};
+    ($count:expr, $s:expr, segment $x:ident , $($tail:tt)*) => {
+        $count += 1;
+        $s += concat!("/", stringify!($x));
+        printer!($count, $s, $($tail)*);
+    };
+    ($count:expr, $s:expr, param $param:ident , $($tail:tt)*) => {
+        $count += 1;
+        $s += concat!("/{", stringify!($param), "}");
+        printer!($count, $s, $($tail)*);
     };
 }
 

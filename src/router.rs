@@ -18,6 +18,7 @@ pub enum Method {
     Head,
     Get,
     Post,
+    Patch,
     Delete,
     Put,
     Options,
@@ -33,6 +34,7 @@ impl fmt::Display for Method {
             Post => "POST",
             Delete => "DELETE",
             Put => "PUT",
+            Patch => "PATCH",
             Options => "OPTIONS",
         })
     }
@@ -47,6 +49,7 @@ impl<'a> From<&'a hyper::Method> for Method {
             hyper::Method::Post => Post,
             hyper::Method::Delete => Delete,
             hyper::Method::Put => Put,
+            hyper::Method::Patch => Patch,
             hyper::Method::Options => Options,
             _ => Get,
         }
@@ -60,6 +63,7 @@ pub enum EndpointHandler {
     Some {
         // TODO [ToDr] Many methods with single handler?
         method: Method,
+        params: (usize, String),
         handler: BoxHandler,
     }
 }
@@ -83,13 +87,13 @@ impl fmt::Display for Endpoint {
         for i in 0..MAX_NUMBER_OF_ENDPOINTS {
             match self.handlers[i] {
                 EndpointHandler::None if i == 0 => {
-                    return write!(fmt, "empty handler");
+                    return writeln!(fmt, "  ?empty handler?");
                 },
                 EndpointHandler::None => {
                     return Ok(());
                 },
-                EndpointHandler::Some { ref method, .. } => {
-                    write!(fmt, "{},", method)?;
+                EndpointHandler::Some { ref method, ref params, .. } => {
+                    writeln!(fmt, "  {} {}", method, if params.0 == 0 { "/" } else { &params.1 })?;
                 }
             }
         }
@@ -105,7 +109,7 @@ impl Endpoint {
         }
     }
 
-    pub fn add(&mut self, method: Method, handler: BoxHandler) -> bool {
+    pub fn add(&mut self, method: Method, params: (usize, String), handler: BoxHandler) -> bool {
         for i in 0..MAX_NUMBER_OF_ENDPOINTS {
             match self.handlers[i] {
                 EndpointHandler::Some { .. } => continue,
@@ -113,6 +117,7 @@ impl Endpoint {
             }
             self.handlers[i] = EndpointHandler::Some {
                 method,
+                params,
                 handler,
             };
             return true;
@@ -122,21 +127,42 @@ impl Endpoint {
     }
 
     pub fn handle(&self, m: Method, req: hyper::Request, prefix: usize) -> HandlerResult {
+        let expected = {
+            let path = &req.path()[prefix..];
+            if path.is_empty() {
+                0
+            } else {
+                path.split('/').count()
+            }
+        };
+        let mut method_found = false;
+
         for i in 0..MAX_NUMBER_OF_ENDPOINTS {
             match self.handlers[i] {
                 EndpointHandler::None => break,
-                EndpointHandler::Some { ref method, ref handler } if method == &m => {
-                    // TODO [ToDr] Handle validation failures separately and fallback to other methods.
+                EndpointHandler::Some { ref method, ref params, ref handler } => {
+                    if method != &m {
+                        continue;
+                    }
+                    method_found = true;
+
+                    if params.0 != expected {
+                        continue;
+                    }
+
                     return handler(req, prefix);
                 },
-                _ => {},
             }
         }
 
-        Box::new(future::ok(Error::method_not_allowed(
-            format!("Method {} is not allowed.", m),
-            format!("Allowed methods: {:?}", self.allowed_methods())
-        ).into()))
+        if method_found {
+            Box::new(future::ok(Error::not_found("Unable to find a handler.").into()))
+        } else {
+            Box::new(future::ok(Error::method_not_allowed(
+                format!("Method {} is not allowed.", m),
+                format!("Allowed methods: {}", self.allowed_methods())
+            ).into()))
+        }
     }
 
     fn allowed_methods(&self) -> String {
@@ -170,9 +196,20 @@ impl Router {
         let mut it = self.routes.iter();
         while let Some((prefix, route)) = it.next() {
             let prefix = ::std::str::from_utf8(&prefix).expect("Storing only strings in tree; qed");
-            s.push_str(&format!("{} -> {}\n", prefix, route));
+            s.push_str(&format!("{}\n{}\n", prefix, route));
         }
         s
+    }
+
+    /// Compose with some other router under given prefix.
+    pub fn add(&mut self, prefix: &str, router: Router) {
+        self.routes.merge(prefix, router.routes);
+    }
+
+    /// Consume the router and start HTTP server on given address.
+    pub fn bind<T: ::std::net::ToSocketAddrs>(self, address: T) -> Result<Listening, hyper::Error> {
+        let server = Server::new(self.routes);
+        server.bind(address)
     }
 
     /// Declare endpoint.
@@ -188,7 +225,7 @@ impl Router {
         let params = params.into();
         let parser = params.parser;
         let mut endpoint = self.routes.remove(params.prefix).unwrap_or_else(Endpoint::new);
-        let added = endpoint.add(method, Box::new(move |request, prefix_len| {
+        let added = endpoint.add(method, parser.expected_params(), Box::new(move |request, prefix_len| {
             let params = match parser.parse(request.uri(), prefix_len) {
                 Ok(params) => params,
                 Err(err) => return Box::new(future::ok(Error::from(err).into())),
@@ -219,14 +256,55 @@ impl Router {
         self.on(Method::Get, prefix, fun)
     }
 
-    /// Compose with some other router under given prefix.
-    pub fn add(&mut self, prefix: &str, router: Router) {
-        self.routes.merge(prefix, router.routes);
+    /// Declare POST endpoint.
+    pub fn post<'a, F, I, R, E, D, P>(&mut self, prefix: D, fun: F) where
+        F: Fn(Request<P::Params>) -> I + Sync + Send + 'static,
+        I: IntoFuture<Item = R, Error = E>,
+        R: Into<Response>,
+        E: Into<Error>,
+        D: Into<Params<'a, P>>,
+        P: params::Parser,
+        I::Future: 'static,
+    {
+        self.on(Method::Post, prefix, fun)
     }
 
-    /// Consume the router and start HTTP server on given address.
-    pub fn bind<T: ::std::net::ToSocketAddrs>(self, address: T) -> Result<Listening, hyper::Error> {
-        let server = Server::new(self.routes);
-        server.bind(address)
+    /// Declare PUT endpoint.
+    pub fn put<'a, F, I, R, E, D, P>(&mut self, prefix: D, fun: F) where
+        F: Fn(Request<P::Params>) -> I + Sync + Send + 'static,
+        I: IntoFuture<Item = R, Error = E>,
+        R: Into<Response>,
+        E: Into<Error>,
+        D: Into<Params<'a, P>>,
+        P: params::Parser,
+        I::Future: 'static,
+    {
+        self.on(Method::Put, prefix, fun)
+    }
+
+    /// Declare PATCH endpoint.
+    pub fn patch<'a, F, I, R, E, D, P>(&mut self, prefix: D, fun: F) where
+        F: Fn(Request<P::Params>) -> I + Sync + Send + 'static,
+        I: IntoFuture<Item = R, Error = E>,
+        R: Into<Response>,
+        E: Into<Error>,
+        D: Into<Params<'a, P>>,
+        P: params::Parser,
+        I::Future: 'static,
+    {
+        self.on(Method::Patch, prefix, fun)
+    }
+
+    /// Declare DELETE endpoint.
+    pub fn delete<'a, F, I, R, E, D, P>(&mut self, prefix: D, fun: F) where
+        F: Fn(Request<P::Params>) -> I + Sync + Send + 'static,
+        I: IntoFuture<Item = R, Error = E>,
+        R: Into<Response>,
+        E: Into<Error>,
+        D: Into<Params<'a, P>>,
+        P: params::Parser,
+        I::Future: 'static,
+    {
+        self.on(Method::Delete, prefix, fun)
     }
 }

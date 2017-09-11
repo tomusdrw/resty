@@ -16,7 +16,7 @@ impl<'a> Into<Params<'a>> for &'a str {
         match self.find('{') {
             None => {
                 Params {
-                    parser: StdParser::params(""),
+                    parser: StdParser::default(),
                     prefix: self,
                 }
             },
@@ -82,11 +82,15 @@ pub trait Parser: Send + Sync + 'static {
     /// Returned Parameters type.
     type Params;
 
+    /// Returns number of expected params and param names.
+    fn expected_params(&self) -> (usize, String);
+
     /// Parser URL and return params
     fn parse(&self, uri: &hyper::Uri, skip: usize) -> Result<Self::Params, Error>;
 }
 
 /// A standard parser which processes params dynamically.
+#[derive(Debug, Default)]
 pub struct StdParser {
     params: Vec<(usize, String)>,
     segments: Vec<(usize, String)>,
@@ -121,6 +125,11 @@ impl StdParser {
 }
 impl Parser for StdParser {
     type Params = DynamicParams;
+
+    fn expected_params(&self) -> (usize, String) {
+        (self.expected, self.params.iter().fold(String::new(), |acc, param| acc + "/{" + &param.1 + "}"))
+    }
+
     fn parse(&self, uri: &hyper::Uri, skip: usize) -> Result<Self::Params, Error> {
         let path = &uri.path()[skip..];
         if self.expected == 0 && !path.is_empty() {
@@ -130,7 +139,6 @@ impl Parser for StdParser {
                 self.params.clone(),
                 self.segments.clone(),
                 path.into(),
-                self.expected,
             )
         }
     }
@@ -144,7 +152,7 @@ pub struct DynamicParams {
 
 impl DynamicParams {
     /// Create new dynamic params and validate segment positions.
-    pub fn validate(params: Vec<(usize, String)>, segments: Vec<(usize, String)>, path: String, expected: usize) -> Result<Self, Error> {
+    pub fn validate(params: Vec<(usize, String)>, segments: Vec<(usize, String)>, path: String) -> Result<Self, Error> {
         {
             let mut it = path.split('/');
             let mut current_pos = 0;
@@ -165,17 +173,6 @@ impl DynamicParams {
                     }),
                     None => return Err(Error::NotFound),
                 }
-            }
-
-            while current_pos < expected {
-                if it.next().is_none() {
-                    return Err(Error::NotFound);
-                }
-                current_pos += 1;
-            }
-
-            if it.next().is_some() {
-                return Err(Error::NotFound);
             }
         }
 
