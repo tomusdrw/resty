@@ -1,7 +1,16 @@
+//! Resty request wrapper.
+
 use hyper;
 use futures::{future, Stream, Future};
 use serde;
 use serde_json;
+
+use error;
+
+pub mod params;
+pub mod url_parser;
+
+pub use self::params::Params;
 
 /// Request parsing error.
 #[derive(Debug)]
@@ -12,9 +21,9 @@ pub enum Error {
   Hyper(hyper::Error),
 }
 
-impl From<Error> for ::error::Error {
+impl From<Error> for error::Error {
   fn from(err: Error) -> Self {
-    ::error::Error {
+    error::Error {
       code: 400,
       message: "Unable to parse request".into(),
       details: format!("{:?}", err),
@@ -24,16 +33,31 @@ impl From<Error> for ::error::Error {
 
 /// Resty Request wrapper.
 #[derive(Debug)]
-pub struct Request {
+pub struct Request<P = ()> {
   request: hyper::Request,
+  params: Option<P>,
 }
 
-impl Request {
+impl<P> Request<P> {
+  /// Creates new instance of request
+  pub fn new(request: hyper::Request, params: P) -> Self {
+    Request { request, params: Some(params) }
+  }
+
+  /// Returns params reference.
+  pub fn params(&self) -> &P {
+    self.params.as_ref().unwrap()
+  }
+
+  /// Consumes params.
+  pub fn take_params(&mut self) -> P {
+    self.params.take().unwrap()
+  }
+
+  // TODO Don't require DeserializeOwned here!
   /// Read the body of this request and deserialize it from JSON.
   /// Returns error in case the request body cannot be read or deserialization fails.
-  pub fn json<'a, T: serde::de::DeserializeOwned + 'a>(self) -> Box<Future<Item = T, Error = Error> + 'a> where
-    Self: 'a
-  {
+  pub fn json<'b, T: serde::de::DeserializeOwned + 'b>(self) -> Box<Future<Item = T, Error = Error> + 'b> {
     Box::new(
       self.request.body().concat2().then(|chunk| {
         match chunk {
@@ -45,11 +69,5 @@ impl Request {
         }
       })
     )
-  }
-}
-
-impl From<hyper::Request> for Request {
-  fn from(request: hyper::Request) -> Self {
-    Request { request }
   }
 }

@@ -2,11 +2,19 @@ use std::sync::Arc;
 use hyper;
 use futures::future;
 
-use router::{Method, BoxHandler, HandlerResult};
-use prefix_tree;
+use router::{Routes, HandlerResult};
 
+#[derive(Clone)]
 pub struct Server {
-  pub routes: Arc<prefix_tree::Tree<(Method, BoxHandler)>>,
+  pub routes: Arc<Routes>,
+}
+
+impl Server {
+  pub fn new(routes: Routes) -> Self {
+    Server {
+      routes: Arc::new(routes),
+    }
+  }
 }
 
 impl hyper::server::Service for Server {
@@ -19,9 +27,9 @@ impl hyper::server::Service for Server {
     let path = req.uri().path().to_owned();
     let method = req.method().into();
     match self.routes.find(path) {
-      Some(&(ref m, ref router)) => {
-        if *m == method {
-          router(req.into())
+      Some((prefix, ref endpoint)) => {
+        if endpoint.method == method {
+          (endpoint.handler)(req, prefix)
         } else {
           Box::new(future::ok(hyper::Response::new()))
         }

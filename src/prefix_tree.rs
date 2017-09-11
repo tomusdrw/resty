@@ -108,21 +108,23 @@ impl<T> Tree<T> {
   }
 
   /// Finds the first terminal element by looking at the prefix.
-  pub fn find<K: AsRef<[u8]>>(&self, key: K) -> Option<&T> {
+  /// Returns the length of the matched prefix and a reference to the element.
+  pub fn find<K: AsRef<[u8]>>(&self, key: K) -> Option<(usize, &T)> {
     let bytes = key.as_ref();
+
 
     let mut best_result = None;
     let mut current = &self.routes;
-    for byte in bytes {
+    for (pos, byte) in bytes.iter().enumerate() {
       match current[*byte as usize] {
         // final node
         Node::Empty => return best_result,
         // Save it as best result, but look for longer pattern
-        Node::Data(ref t) => best_result = Some(t),
+        Node::Data(ref t) => best_result = Some((pos + 1, t)),
         // Descend in the tree
         Node::Tree(ref top_level, ref tree) => {
           if let Some(ref top_level) = *top_level {
-            best_result = Some(top_level);
+            best_result = Some((pos + 1, top_level));
           }
           current = &tree.routes
         },
@@ -144,8 +146,8 @@ mod tests {
     tree.insert("abc", 5);
 
     assert_eq!(tree.find("ab"), None);
-    assert_eq!(tree.find("abc"), Some(&5));
-    assert_eq!(tree.find("abcd"), Some(&5));
+    assert_eq!(tree.find("abc"), Some((3, &5)));
+    assert_eq!(tree.find("abcd"), Some((3, &5)));
   }
 
   #[test]
@@ -161,13 +163,13 @@ mod tests {
 
     tree1.merge("a", tree2);
 
-    assert_eq!(tree1.find("ab"), Some(&5));
-    assert_eq!(tree1.find("abc"), Some(&4));
-    assert_eq!(tree1.find("abcd"), Some(&4));
-    assert_eq!(tree1.find("aabcd"), Some(&7));
-    assert_eq!(tree1.find("axy"), Some(&9));
-    assert_eq!(tree1.find("axyz"), Some(&10));
-    assert_eq!(tree1.find("axyzx"), Some(&10));
-    assert_eq!(tree1.find("z"), Some(&6));
+    assert_eq!(tree1.find("ab"), Some((2, &5)));
+    assert_eq!(tree1.find("abc"), Some((3, &4)));
+    assert_eq!(tree1.find("abcd"), Some((3, &4)));
+    assert_eq!(tree1.find("aabcd"), Some((4, &7)));
+    assert_eq!(tree1.find("axy"), Some((3, &9)));
+    assert_eq!(tree1.find("axyz"), Some((4, &10)));
+    assert_eq!(tree1.find("axyzx"), Some((4, &10)));
+    assert_eq!(tree1.find("z"), Some((1, &6)));
   }
 }

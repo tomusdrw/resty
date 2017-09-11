@@ -13,16 +13,17 @@ extern crate serde_derive;
 
 mod error;
 mod prefix_tree;
-mod request;
+pub mod request;
 mod response;
 mod router;
 mod server;
 
 pub use error::Error;
-pub use request::{Request, Error as RequestError};
+pub use request::Request;
 pub use response::Response;
 pub use router::Router;
 pub use server::Listening;
+pub use hyper::Uri;
 
 
 #[cfg(test)]
