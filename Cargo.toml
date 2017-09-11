@@ -1,7 +1,19 @@
 [package]
 name = "resty"
 version = "0.1.0"
+description = "A simple JSON REST-API framework."
+homepage = "https://github.com/tomusdrw/resty"
+repository = "https://github.com/tomusdrw/resty"
+readme = "README.md"
+documentation = "https://docs.rs/resty"
+license = "MIT"
+keywords = ["hyper", "http", "rest", "json", "api"]
 authors = ["Tomasz Drwięga <tomusdrw@gmail.com>"]
+
+categories = [
+    "asynchronous",
+    "web-programming::http-server",
+]
 
 [dependencies]
 arrayvec = "0.4"

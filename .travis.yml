@@ -1,0 +1,20 @@
+sudo: false
+language: rust
+branches:
+  only:
+  - master
+
+cache: cargo
+
+matrix:
+  fast_finish: false
+  include:
+  - rust: stable
+  - rust: beta
+  - rust: nightly
+  allow_failures:
+  - rust: nightly
+
+script:
+  - cargo build
+  - cargo test
