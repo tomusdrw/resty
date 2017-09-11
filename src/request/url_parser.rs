@@ -8,7 +8,7 @@ macro_rules! url {
             ,
             no_params
             ,
-            ""
+            "/"
             ;
             ;
         )
@@ -29,8 +29,6 @@ macro_rules! url_internal {
 
             fn parse(&self, uri: &$crate::Uri, skip: usize) -> Result<Self::Params, $crate::request::params::Error> {
                 let mut it = uri.path()[skip..].split('/');
-                // Skip leading slash.
-                it.next();
                 parser!(it, $($data)*);
                 Ok(MyParams { $($param,)* })
             }
@@ -47,7 +45,7 @@ macro_rules! url_internal {
             ,
             has_params
             ,
-            concat!($prefix, "/", stringify!($p))
+            concat!($prefix, stringify!($p), "/")
             ;
             $($param : $type,)*
             ;
@@ -61,7 +59,7 @@ macro_rules! url_internal {
             ,
             no_params
             ,
-            concat!($prefix, "/", stringify!($p))
+            concat!($prefix, stringify!($p), "/")
             ;
             $($param : $type,)*
             ;
@@ -74,7 +72,7 @@ macro_rules! url_internal {
             ,
             has_params
             ,
-            $prefix 
+            $prefix
             ;
             $($param : $type,)*
             $p : $t,
@@ -118,7 +116,7 @@ fn url_parser() {
 
     let url = url!(/v1/test/{id:usize}/{a:String});
 
-    assert_eq!(url.prefix, "/v1/test");
+    assert_eq!(url.prefix, "/v1/test/");
     let uri = "http://localhost:3000/v1/test/5/3".parse().unwrap();
     let parsed = url.parser.parse(&uri, url.prefix.len()).unwrap();
     assert_eq!(parsed.id, 5);

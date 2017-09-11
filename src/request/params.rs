@@ -62,17 +62,17 @@ impl From<Error> for error::Error {
             Error::UnknownParameter(param) => error::Error::internal(
                 "Tried to access non-existent parameter. That's most likely a bug in the handler.",
                 param,
-                ),
-                Error::InvalidType { param, path, error } => error::Error::bad_request(
-                    format!("Error while parsing parameter {:?} from {:?}", param, path),
-                    error
-                    ),
-                Error::NotFound => error::Error::not_found(
-                    "The resource exists, but expects a parameter."
-                    ),
-                    Error::InvalidSegment { got, expected } => error::Error::not_found(
-                        format!("The resource exists, but the path is invalid. Got {:?}, expected {:?}", got, expected)
-                        ),
+            ),
+            Error::InvalidType { param, path, error } => error::Error::bad_request(
+                format!("Error while parsing parameter {:?} from {:?}", param, path),
+                error
+            ),
+            Error::NotFound => error::Error::not_found(
+                "The resource exists, but expects a parameter."
+            ),
+            Error::InvalidSegment { got, expected } => error::Error::not_found(
+                format!("The resource exists, but the path is invalid. Got {:?}, expected {:?}", got, expected)
+            ),
         }
     }
 }
@@ -90,6 +90,7 @@ pub trait Parser: Send + Sync + 'static {
 pub struct StdParser {
     params: Vec<(usize, String)>,
     segments: Vec<(usize, String)>,
+    expected: usize,
 }
 
 impl StdParser {
@@ -114,17 +115,24 @@ impl StdParser {
         StdParser {
             params,
             segments,
+            expected: pos,
         }
     }
 }
 impl Parser for StdParser {
     type Params = DynamicParams;
     fn parse(&self, uri: &hyper::Uri, skip: usize) -> Result<Self::Params, Error> {
-        DynamicParams::validate(
-            self.params.clone(),
-            self.segments.clone(),
-            uri.path()[skip..].into()
+        let path = &uri.path()[skip..];
+        if self.expected == 0 && !path.is_empty() {
+            Err(Error::NotFound)
+        } else {
+            DynamicParams::validate(
+                self.params.clone(),
+                self.segments.clone(),
+                path.into(),
+                self.expected,
             )
+        }
     }
 }
 
@@ -136,7 +144,7 @@ pub struct DynamicParams {
 
 impl DynamicParams {
     /// Create new dynamic params and validate segment positions.
-    pub fn validate(params: Vec<(usize, String)>, segments: Vec<(usize, String)>, path: String) -> Result<Self, Error> {
+    pub fn validate(params: Vec<(usize, String)>, segments: Vec<(usize, String)>, path: String, expected: usize) -> Result<Self, Error> {
         {
             let mut it = path.split('/');
             let mut current_pos = 0;
@@ -157,6 +165,17 @@ impl DynamicParams {
                     }),
                     None => return Err(Error::NotFound),
                 }
+            }
+
+            while current_pos < expected {
+                if it.next().is_none() {
+                    return Err(Error::NotFound);
+                }
+                current_pos += 1;
+            }
+
+            if it.next().is_some() {
+                return Err(Error::NotFound);
             }
         }
 

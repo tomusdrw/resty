@@ -31,20 +31,23 @@ impl Into<resty::Router> for Products {
         let mut router = resty::Router::new();
         let self_ = ::std::sync::Arc::new(self);
         let a = self_.clone();
+        // no params
         router.get("/", move |_request| {
             a.list()
         });
 
         let a = self_.clone();
+        // static params
         router.get(url!(/test/{id:usize}), move |request| {
             a.single(request.params().id)
         });
 
         let a = self_.clone();
-        // dynamic params implementation
+        // dynamic params
         router.get("/dyn/{id}", move |request| {
             a.single(request.params().get_usize("id")?)
         });
+
         router
     }
 }
@@ -69,6 +72,7 @@ fn main() {
         })
     });
 
+    println!("{}", server.routes());
     let listening = server.bind("localhost:3000").unwrap();
     listening.wait()
 }

@@ -16,6 +16,14 @@ impl Server {
             routes: Arc::new(routes),
         }
     }
+
+    pub fn bind<T: ::std::net::ToSocketAddrs>(self, address: T) -> Result<Listening, hyper::Error> {
+        // TODO handle errors
+        let address = address.to_socket_addrs()?.next().unwrap();
+        let server = hyper::server::Http::new().bind(&address, move || Ok(self.clone()))?;
+        server.run()?;
+        unimplemented!()
+    }
 }
 
 impl hyper::server::Service for Server {
@@ -29,18 +37,11 @@ impl hyper::server::Service for Server {
         let method = req.method().into();
         match self.routes.find(path) {
             Some((prefix, ref endpoint)) => {
-                if endpoint.method == method {
-                    (endpoint.handler)(req, prefix)
-                } else {
-                    Box::new(future::ok(Error::method_not_allowed(
-                                format!("Method {:?} is not allowed.", method),
-                                format!("Allowed methods: {:?}", endpoint.method)
-                                ).into()))
-                }
+                endpoint.handle(method, req, prefix)
             },
             None => Box::new(future::ok(Error::not_found(
-                        "Requested resource was not found."
-                        ).into())),
+                "Requested resource was not found."
+            ).into())),
         }
     }
 }

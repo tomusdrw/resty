@@ -1,4 +1,5 @@
 use std::mem;
+use std::fmt;
 use arrayvec::ArrayVec;
 
 enum Node<T> {
@@ -9,9 +10,21 @@ enum Node<T> {
 
 const SIZE: usize = 256;
 
-// TODO [ToDr] Debug
 pub struct Tree<T> {
     routes: [Node<T>; SIZE],
+}
+
+impl<T: fmt::Debug> fmt::Debug for Tree<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(fmt, "Tree:")?;
+        for (prefix, item) in self.iter() {
+            writeln!(fmt, "{} -> {:?}", match ::std::str::from_utf8(&prefix) {
+                Ok(s) => format!("{}", s),
+                Err(_) => format!("{:?}", prefix),
+            }, item)?;
+        }
+        Ok(())
+    }
 }
 
 impl<T> Default for Tree<T> {
@@ -56,6 +69,12 @@ impl<T> Tree<T> {
         Self::default()
     }
 
+    pub fn iter<'a>(&'a self) -> TreeIterator<'a, T> {
+        TreeIterator {
+            stack: vec![(vec![], 0, &self)],
+        }
+    }
+
     pub fn merge<K: AsRef<[u8]>>(&mut self, prefix: K, mut other: Tree<T>) {
         let bytes = prefix.as_ref();
         if bytes.is_empty() {
@@ -96,7 +115,7 @@ impl<T> Tree<T> {
 
         self.routes[b] = match old {
             Node::Empty => return None,
-            Node::Data(d) => return Some(d),
+            Node::Data(d) => Node::Data(d),
             Node::Tree(d, tree) => Node::Tree(d, tree),
         };
 
@@ -166,6 +185,48 @@ impl<T> Tree<T> {
     }
 }
 
+pub struct TreeIterator<'a, T: 'a> {
+    stack: Vec<(Vec<u8>, usize, &'a Tree<T>)>,
+}
+
+impl<'a, T: 'a> Iterator for TreeIterator<'a, T> {
+    type Item = (Vec<u8>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let (mut prefix, next_pos, tree) = match self.stack.pop() {
+                Some(elem) => elem,
+                None => return None,
+            };
+            let current_prefix = {
+                let mut p = prefix.clone();
+                p.push(next_pos as u8);
+                p
+            };
+
+            let (display, next) = match tree.routes[next_pos] {
+                Node::Empty => (None, None),
+                Node::Data(ref t) => (Some((current_prefix, t)), None),
+                Node::Tree(ref d, ref tree) => (d.as_ref().map(|t| (current_prefix, t)), Some(tree)),
+            };
+
+            if next_pos + 1 < SIZE {
+                // Push current item back to stack.
+                self.stack.push((prefix.clone(), next_pos + 1, tree));
+            }
+
+            if let Some(next) = next {
+                prefix.push(next_pos as u8);
+                self.stack.push((prefix, 0, next));
+            }
+
+            if display.is_some() {
+                return display;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Tree;
@@ -203,4 +264,31 @@ mod tests {
         assert_eq!(tree1.find("axyzx"), Some((4, &10)));
         assert_eq!(tree1.find("z"), Some((1, &6)));
     }
+
+    #[test]
+    fn should_print_the_tree() {
+        let mut tree1 = Tree::new();
+        tree1.insert("abc", 4);
+        tree1.insert("axy", 9);
+        tree1.insert("z", 6);
+        let mut tree2 = Tree::new();
+        tree2.insert("b", 5);
+        tree2.insert("abc", 7);
+        tree2.insert("xyz", 10);
+
+        tree1.merge("a", tree2);
+
+        assert_eq!(
+            format!("{:?}", tree1),
+            r#"Tree:
+aabc -> 7
+ab -> 5
+abc -> 4
+axy -> 9
+axyz -> 10
+z -> 6
+"#
+        );
+    }
+
 }
