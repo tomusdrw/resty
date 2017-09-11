@@ -2,10 +2,12 @@ use hyper::{self, header};
 use serde;
 use serde_json;
 
+use error::Error;
+
 /// Resty response wrapper.
 #[derive(Debug, Default)]
 pub struct Response {
-  response: hyper::Response,
+  pub(crate) response: hyper::Response,
 }
 
 impl Into<hyper::Response> for Response {
@@ -17,11 +19,21 @@ impl Into<hyper::Response> for Response {
 impl<T: serde::Serialize> From<T> for Response {
   fn from(val: T) -> Self {
     let serialized = serde_json::to_vec(&val);
-    let response = hyper::Response::new()
-      .with_status(hyper::StatusCode::Ok)
-      .with_header(header::ContentType::json())
-      // TODO [ToDr] Add some runtime error
-      .with_body(serialized.unwrap_or_else(|_| unimplemented!()));
-    Response { response }
+    match serialized {
+      Ok(serialized) => {
+        let response = hyper::Response::new()
+          .with_status(hyper::StatusCode::Ok)
+          // TODO [ToDr] Configure additional headers?
+          .with_header(header::ContentType::json())
+          .with_body(serialized);
+        Response { response }
+      },
+      Err(error) => {
+        Error::internal(
+          "Unable to serialize response.",
+          format!("{:?}", error),
+        ).into()
+      },
+    }
   }
 }

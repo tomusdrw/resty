@@ -17,10 +17,15 @@ impl Products {
   }
 
   pub fn single(&self, id: usize) -> Result<Call, resty::Error> {
-    Ok(self.calls[id].clone())
+    if id < self.calls.len() {
+      Ok(self.calls[id].clone())
+    } else {
+      Err(resty::Error::not_found(""))
+    }
   }
 }
 
+// TODO [ToDr] Derive this implementatio
 impl Into<resty::Router> for Products {
   fn into(self) -> resty::Router {
     let mut router = resty::Router::new();

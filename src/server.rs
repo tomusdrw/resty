@@ -2,6 +2,7 @@ use std::sync::Arc;
 use hyper;
 use futures::future;
 
+use error::Error;
 use router::{Routes, HandlerResult};
 
 #[derive(Clone)]
@@ -31,11 +32,15 @@ impl hyper::server::Service for Server {
         if endpoint.method == method {
           (endpoint.handler)(req, prefix)
         } else {
-          Box::new(future::ok(hyper::Response::new()))
+          Box::new(future::ok(Error::method_not_allowed(
+            format!("Method {:?} is not allowed.", method),
+            format!("Allowed methods: {:?}", endpoint.method)
+          ).into()))
         }
       },
-      // TODO 404 / method not allowed?
-      None => Box::new(future::ok(hyper::Response::new()))
+      None => Box::new(future::ok(Error::not_found(
+        "Requested resource was not found."
+      ).into())),
     }
   }
 }

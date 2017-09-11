@@ -73,8 +73,10 @@ impl Router {
     self.routes.insert(prefix, Endpoint {
       method,
       handler: Box::new(move |request, prefix_len| {
-        // TODO [ToDr] Error handling
-        let params = parser.parse(request.uri(), prefix_len).unwrap();
+        let params = match parser.parse(request.uri(), prefix_len) {
+          Ok(params) => params,
+          Err(err) => return Box::new(future::ok(Error::from(err).into())),
+        };
         let req = Request::new(request, params);
         Box::new(fun(req).into_future().then(|result| {
           future::ok(match result {

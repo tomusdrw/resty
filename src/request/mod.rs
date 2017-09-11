@@ -23,11 +23,10 @@ pub enum Error {
 
 impl From<Error> for error::Error {
   fn from(err: Error) -> Self {
-    error::Error {
-      code: 400,
-      message: "Unable to parse request".into(),
-      details: format!("{:?}", err),
-    }
+    error::Error::bad_request(
+      "Unable to parse request as JSON.",
+      format!("{:?}", err),
+    )
   }
 }
 

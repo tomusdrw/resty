@@ -35,11 +35,13 @@ impl<'a> Into<Params<'a>> for &'a str {
 #[derive(Debug, PartialEq)]
 pub enum Error {
   /// A requested dynamic paremeter name was not declared.
-  UnknownParameter,
+  UnknownParameter(String),
   /// Expected segment or parameter was not found in the path.
   NotFound,
   /// Cannot parse path to expected type.
   InvalidType {
+    /// Parameter name
+    param: String,
     /// Path segment
     path: String,
     /// Parsing error
@@ -56,11 +58,21 @@ pub enum Error {
 
 impl From<Error> for error::Error {
   fn from(err: Error) -> Self {
-    // TODO [ToDr] Implement more details
-    error::Error {
-      code: 400,
-      message: format!("Required parameter is missing"),
-      details: "".into(),
+    match err {
+      Error::UnknownParameter(param) => error::Error::internal(
+        "Tried to access non-existent parameter. That's most likely a bug in the handler.",
+        param,
+      ),
+      Error::InvalidType { param, path, error } => error::Error::bad_request(
+        format!("Error while parsing parameter {:?} from {:?}", param, path),
+        error
+      ),
+      Error::NotFound => error::Error::not_found(
+        "The resource exists, but expects a parameter."
+      ),
+      Error::InvalidSegment { got, expected } => error::Error::not_found(
+        format!("The resource exists, but the path is invalid. Got {:?}, expected {:?}", got, expected)
+      ),
     }
   }
 }
@@ -161,7 +173,7 @@ impl DynamicParams {
       }
     }
 
-    Err(Error::UnknownParameter)
+    Err(Error::UnknownParameter(name.into()))
   }
 
   /// Retrieve usize value of parameter by given name.
@@ -170,6 +182,7 @@ impl DynamicParams {
     let path = self.path.split('/').nth(pos).ok_or_else(|| Error::NotFound)?;
 
     path.parse().map_err(|e| Error::InvalidType {
+      param: name.into(),
       path: path.into(),
       error: format!("{:?}", e),
     })

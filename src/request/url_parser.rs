@@ -104,6 +104,7 @@ macro_rules! parser {
   ($it:expr , param $param:ident , $($tail:tt)*) => {
     let path = $it.next().ok_or_else(|| $crate::request::params::Error::NotFound)?;
     let $param = path.parse().map_err(|e| $crate::request::params::Error::InvalidType {
+      param: stringify!($param).into(),
       path: path.into(),
       error: format!("{:?}", e),
     })?;

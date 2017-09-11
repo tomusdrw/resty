@@ -23,7 +23,7 @@ pub use request::Request;
 pub use response::Response;
 pub use router::Router;
 pub use server::Listening;
-pub use hyper::Uri;
+pub use hyper::{Uri, StatusCode};
 
 
 #[cfg(test)]
