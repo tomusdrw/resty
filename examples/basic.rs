@@ -1,16 +1,3 @@
-# Resty
-
-Resty - a simple JSON REST-API framework for Rust.
-
-[![Build Status][travis-image]][travis-url]
-
-[travis-image]: https://travis-ci.org/tomusdrw/resty.svg?branch=master
-[travis-url]: https://travis-ci.org/tomusdrw/resty
-
-[Documentation](http://docs.rs/resty)
-
-# Examples
-```rust
 extern crate futures;
 extern crate resty;
 #[macro_use]
@@ -45,20 +32,3 @@ fn main() {
     let listening = server.bind("localhost:3000").unwrap();
     listening.wait()
 }
-```
-
-For more see [examples folder](./examples).
-
-# TODO
-
-## General
-- [ ] `get_*()` for dynamic params.
-- [ ] Auto handle HEAD requests.
-- [ ] CORS support
-- [ ] Middlewares
-- [ ] Cache Control
-- [ ] Auto-derive `Into<Router>` for structs.
-- [ ] Query parameters
-- [ ] Optional parameters
-- [ ] Parameters with /
-
