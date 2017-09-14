@@ -26,7 +26,7 @@ impl From<Error> for error::Error {
         error::Error::bad_request(
             "Unable to parse request as JSON.",
             format!("{:?}", err),
-            )
+        )
     }
 }
 
@@ -73,7 +73,7 @@ fn deserialize<T: for<'a> serde::de::Deserialize<'a>>(chunk: Result<hyper::Chunk
 }
 
 type JsonResult<T> = futures::Then<
-futures::stream::Concat2<hyper::Body>,
-Result<T, Error>,
-fn(Result<hyper::Chunk, hyper::Error>) -> Result<T, Error>,
+    futures::stream::Concat2<hyper::Body>,
+    Result<T, Error>,
+    fn(Result<hyper::Chunk, hyper::Error>) -> Result<T, Error>,
 >;

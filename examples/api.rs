@@ -88,7 +88,7 @@ impl Into<resty::Router> for Products {
         // dynamic params
         let a = self_.clone();
         router.get("/{id}", move |request| {
-            a.single(request.params().get_usize("id")?)
+            a.single(request.params().get("id")?)
         });
 
         // static params

@@ -192,11 +192,18 @@ impl DynamicParams {
         Err(Error::UnknownParameter(name.into()))
     }
 
-    /// Retrieve usize value of parameter by given name.
-    pub fn get_usize(&self, name: &str) -> Result<usize, Error> {
+    /// Retrieve a string value of a parameter by given name.
+    pub fn get_str(&self, name: &str) -> Result<&str, Error> {
         let pos = self.find(name)?;
-        let path = self.path.split('/').nth(pos).ok_or_else(|| Error::NotFound)?;
+        self.path.split('/').nth(pos).ok_or_else(|| Error::NotFound)
+    }
 
+    /// Retrieve a value of a parameter by given name.
+    pub fn get<T>(&self, name: &str) -> Result<T, Error> where
+        T: ::std::str::FromStr,
+        T::Err: ::std::fmt::Debug,
+    {
+        let path = self.get_str(name)?;
         path.parse().map_err(|e| Error::InvalidType {
             param: name.into(),
             path: path.into(),
@@ -215,18 +222,30 @@ mod tests {
         assert_eq!(params.prefix, "/");
         let uri = "http://localhost/5".parse().unwrap();
         let parsed = params.parser.parse(&uri, params.prefix.len()).unwrap();
-        assert_eq!(parsed.get_usize("id").unwrap(), 5);
+        assert_eq!(parsed.get_str("id").unwrap(), "5");
+        assert_eq!(parsed.get::<usize>("id").unwrap(), 5);
+        assert_eq!(parsed.get::<f64>("id").unwrap(), 5.0f64);
+        assert_eq!(parsed.get::<u32>("id").unwrap(), 5u32);
+        assert_eq!(parsed.get::<u64>("id").unwrap(), 5u64);
 
         let params: Params = "/test/{id}".into();
         assert_eq!(params.prefix, "/test/");
         let uri = "http://localhost/test/5".parse().unwrap();
         let parsed = params.parser.parse(&uri, params.prefix.len()).unwrap();
-        assert_eq!(parsed.get_usize("id").unwrap(), 5);
+        assert_eq!(parsed.get_str("id").unwrap(), "5");
+        assert_eq!(parsed.get::<usize>("id").unwrap(), 5);
+        assert_eq!(parsed.get::<f64>("id").unwrap(), 5.0f64);
+        assert_eq!(parsed.get::<u32>("id").unwrap(), 5u32);
+        assert_eq!(parsed.get::<u64>("id").unwrap(), 5u64);
 
         let params: Params = "/test/{id}/xxx".into();
         assert_eq!(params.prefix, "/test/");
         let uri = "http://localhost/test/5/xxx".parse().unwrap();
         let parsed = params.parser.parse(&uri, params.prefix.len()).unwrap();
-        assert_eq!(parsed.get_usize("id").unwrap(), 5);
+        assert_eq!(parsed.get_str("id").unwrap(), "5");
+        assert_eq!(parsed.get::<usize>("id").unwrap(), 5);
+        assert_eq!(parsed.get::<f64>("id").unwrap(), 5.0f64);
+        assert_eq!(parsed.get::<u32>("id").unwrap(), 5u32);
+        assert_eq!(parsed.get::<u64>("id").unwrap(), 5u64);
     }
 }

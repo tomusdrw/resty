@@ -52,7 +52,7 @@ For more see [examples folder](./examples).
 # TODO
 
 ## General
-- [ ] `get_*()` for dynamic params.
+- [x] `get_*()` for dynamic params.
 - [ ] Auto handle HEAD requests.
 - [ ] CORS support
 - [ ] Middlewares
