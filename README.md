@@ -53,7 +53,7 @@ For more see [examples folder](./examples).
 
 ## General
 - [x] `get_*()` for dynamic params.
-- [ ] Auto handle HEAD requests.
+- [x] Auto handle HEAD requests.
 - [ ] CORS support
 - [ ] Middlewares
 - [ ] Cache Control

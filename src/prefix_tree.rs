@@ -75,6 +75,17 @@ impl<T> Tree<T> {
         }
     }
 
+    pub fn for_each<F: Fn(&mut T)>(&mut self, f: &F) {
+        let iter = TreeIteratorMut {
+            stack: vec![(vec![], 0, self as *mut Tree<T>)],
+            _d: Default::default(),
+        };
+
+        for (_, endpoint) in iter {
+            f(endpoint)
+        }
+    }
+
     pub fn merge<K: AsRef<[u8]>>(&mut self, prefix: K, mut other: Tree<T>) {
         let bytes = prefix.as_ref();
         if bytes.is_empty() {
@@ -82,16 +93,29 @@ impl<T> Tree<T> {
             return;
         }
 
-        let b = bytes[0] as usize;
-        let old = mem::replace(&mut self.routes[b], Node::Empty);
-        self.routes[b] = match old {
-            Node::Empty => Node::Tree(None, Box::new(Tree::new())),
-            Node::Data(d) => Node::Tree(Some(d), Box::new(Tree::new())),
-            Node::Tree(d, tree) => Node::Tree(d, tree),
-        };
+        let mut pos = 0;
+        let mut next = &mut self.routes as *mut [Node<T>; SIZE];
+        loop {
+            let is_last = pos == bytes.len() - 1;
+            let b = bytes[pos] as usize;
+            let mut current = unsafe { &mut *next };
+            let old = mem::replace(&mut current[b], Node::Empty);
+            current[b] = match old {
+                Node::Empty => Node::Tree(None, Box::new(Tree::new())),
+                Node::Data(d) => Node::Tree(Some(d), Box::new(Tree::new())),
+                Node::Tree(d, tree) => Node::Tree(d, tree),
+            };
 
-        if let Node::Tree(_, ref mut tree) = self.routes[b] {
-            tree.merge(&bytes[1..], other);
+            if let Node::Tree(_, ref mut tree) = current[b] {
+                if is_last {
+                    merge_trees(tree, &mut other);
+                    return;
+                }
+                next = &mut tree.routes as *mut [Node<T>; SIZE];
+                pos += 1;
+            } else {
+                return;
+            }
         }
     }
 
@@ -100,29 +124,35 @@ impl<T> Tree<T> {
         let len = bytes.len();
         assert!(len > 0, "Empty keys are not supported.");
 
-        let is_last = len == 1;
-        let b = bytes[0] as usize;
-        let old = mem::replace(&mut self.routes[b], Node::Empty);
-        if is_last {
-            let (new, old) = match old {
-                Node::Empty => (Node::Empty, None),
-                Node::Data(d) => (Node::Empty, Some(d)),
-                Node::Tree(d, tree) => (Node::Tree(None, tree), d),
+        let mut pos = 0;
+        let mut next = &mut self.routes as *mut [Node<T>; SIZE];
+        loop {
+            let is_last = pos == len - 1;
+            let b = bytes[pos] as usize;
+            let mut current = unsafe { &mut *next };
+            let old = mem::replace(&mut current[b], Node::Empty);
+            if is_last {
+                let (new, old) = match old {
+                    Node::Empty => (Node::Empty, None),
+                    Node::Data(d) => (Node::Empty, Some(d)),
+                    Node::Tree(d, tree) => (Node::Tree(None, tree), d),
+                };
+                current[b] = new;
+                return old;
+            }
+
+            current[b] = match old {
+                Node::Empty => return None,
+                Node::Data(d) => Node::Data(d),
+                Node::Tree(d, tree) => Node::Tree(d, tree),
             };
-            self.routes[b] = new;
-            return old;
-        }
 
-        self.routes[b] = match old {
-            Node::Empty => return None,
-            Node::Data(d) => Node::Data(d),
-            Node::Tree(d, tree) => Node::Tree(d, tree),
-        };
-
-        if let Node::Tree(_, ref mut tree) = self.routes[b] {
-            tree.remove(&bytes[1..])
-        } else {
-            None
+            if let Node::Tree(_, ref mut tree) = current[b] {
+                next = &mut tree.routes as *mut [Node<T>; SIZE];
+                pos += 1;
+            } else {
+                return None
+            }
         }
     }
 
@@ -131,29 +161,35 @@ impl<T> Tree<T> {
         let len = bytes.len();
         assert!(len > 0, "Empty keys are not supported.");
 
-        let is_last = len == 1;
-        let b = bytes[0] as usize;
-        let old = mem::replace(&mut self.routes[b], Node::Empty);
-        if is_last {
-            let (new, old) = match old {
-                Node::Empty => (Node::Data(value), None),
-                Node::Data(d) => (Node::Data(value), Some(d)),
-                Node::Tree(d, tree) => (Node::Tree(Some(value), tree), d),
+        let mut pos = 0;
+        let mut next = &mut self.routes as *mut [Node<T>; SIZE];
+        loop {
+            let is_last = pos == len - 1;
+            let b = bytes[pos] as usize;
+            let current = unsafe { &mut *next };
+            let old = mem::replace(&mut current[b], Node::Empty);
+            if is_last {
+                let (new, old) = match old {
+                    Node::Empty => (Node::Data(value), None),
+                    Node::Data(d) => (Node::Data(value), Some(d)),
+                    Node::Tree(d, tree) => (Node::Tree(Some(value), tree), d),
+                };
+                current[b] = new;
+                return old;
+            }
+
+            current[b] = match old {
+                Node::Empty => Node::Tree(None, Box::new(Tree::new())),
+                Node::Data(d) => Node::Tree(Some(d), Box::new(Tree::new())),
+                Node::Tree(d, tree) => Node::Tree(d, tree),
             };
-            self.routes[b] = new;
-            return old;
-        }
 
-        self.routes[b] = match old {
-            Node::Empty => Node::Tree(None, Box::new(Tree::new())),
-            Node::Data(d) => Node::Tree(Some(d), Box::new(Tree::new())),
-            Node::Tree(d, tree) => Node::Tree(d, tree),
-        };
-
-        if let Node::Tree(_, ref mut tree) = self.routes[b] {
-            tree.insert(&bytes[1..], value)
-        } else {
-            None
+            if let Node::Tree(_, ref mut tree) = current[b] {
+                next = &mut tree.routes as *mut [Node<T>; SIZE];
+                pos += 1;
+            } else {
+                return None;
+            }
         }
     }
 
@@ -161,7 +197,6 @@ impl<T> Tree<T> {
     /// Returns the length of the matched prefix and a reference to the element.
     pub fn find<K: AsRef<[u8]>>(&self, key: K) -> Option<(usize, &T)> {
         let bytes = key.as_ref();
-
 
         let mut best_result = None;
         let mut current = &self.routes;
@@ -226,6 +261,50 @@ impl<'a, T: 'a> Iterator for TreeIterator<'a, T> {
         }
     }
 }
+
+pub struct TreeIteratorMut<'a, T: 'a> {
+    stack: Vec<(Vec<u8>, usize, *mut Tree<T>)>,
+    _d: ::std::marker::PhantomData<&'a T>,
+}
+
+impl<'a, T: 'a> Iterator for TreeIteratorMut<'a, T> {
+    type Item = (Vec<u8>, &'a mut T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let (mut prefix, next_pos, tree) = match self.stack.pop() {
+                Some(elem) => elem,
+                None => return None,
+            };
+            let current_prefix = {
+                let mut p = prefix.clone();
+                p.push(next_pos as u8);
+                p
+            };
+
+            let (display, next) = match unsafe { &mut *tree }.routes[next_pos] {
+                Node::Empty => (None, None),
+                Node::Data(ref mut t) => (Some((current_prefix, t)), None),
+                Node::Tree(ref mut d, ref mut tree) => (d.as_mut().map(|t| (current_prefix, t)), Some(tree)),
+            };
+
+            if next_pos + 1 < SIZE {
+                // Push current item back to stack.
+                self.stack.push((prefix.clone(), next_pos + 1, tree));
+            }
+
+            if let Some(next) = next {
+                prefix.push(next_pos as u8);
+                self.stack.push((prefix, 0, &mut **next as *mut Tree<T>));
+            }
+
+            if display.is_some() {
+                return display;
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -2,6 +2,7 @@ use std::fmt;
 use hyper;
 use futures::{future, Future, IntoFuture};
 
+use config::{Config, MaterializedConfig};
 use error::Error;
 use request::{params, Params, Request};
 use response::Response;
@@ -79,7 +80,9 @@ impl fmt::Debug for EndpointHandler {
 
 #[derive(Debug)]
 pub struct Endpoint {
-    pub handlers: [EndpointHandler; MAX_NUMBER_OF_ENDPOINTS],
+    handlers: [EndpointHandler; MAX_NUMBER_OF_ENDPOINTS],
+    base_config: Config,
+    config: MaterializedConfig,
 }
 
 impl fmt::Display for Endpoint {
@@ -102,11 +105,22 @@ impl fmt::Display for Endpoint {
 }
 
 impl Endpoint {
-    pub fn new() -> Self {
+    pub fn with_config(base_config: Config) -> Self {
         use self::EndpointHandler::None;
+        let config = base_config.materialize();
         Endpoint {
             handlers: [None, None, None, None, None, None],
+            base_config,
+            config,
         }
+    }
+
+    /// Adds another config to the list of configs.
+    /// All options that have not been set by previous configs
+    /// will be applied.
+    fn add_config(&mut self, config: &Config) {
+        self.base_config.add(config);
+        self.config = self.base_config.materialize();
     }
 
     pub fn add(&mut self, method: Method, params: (usize, String), handler: BoxHandler) -> bool {
@@ -157,6 +171,11 @@ impl Endpoint {
 
         if method_found {
             Box::new(future::ok(Error::not_found("Unable to find a handler.").into()))
+        } else if m == Method::Head && self.config.handle_head {
+            Box::new(self.handle(Method::Get, req, prefix).map(|mut response| {
+                response.set_body(vec![]);
+                response
+            }))
         } else {
             Box::new(future::ok(Error::method_not_allowed(
                 format!("Method {} is not allowed.", m),
@@ -182,12 +201,20 @@ impl Endpoint {
 #[derive(Default, Debug)]
 pub struct Router {
     routes: Routes,
+    config: Config,
 }
 
 impl Router {
     /// Creates a new instance of router.
     pub fn new() -> Self {
         Router::default()
+    }
+
+    /// Creates a new instance of router with given config.
+    pub fn with_config(config: Config) -> Self {
+        let mut r = Router::new();
+        r.config = config;
+        r
     }
 
     /// Pretty-prints the endpoints handled by given router.
@@ -202,7 +229,11 @@ impl Router {
     }
 
     /// Compose with some other router under given prefix.
-    pub fn add(&mut self, prefix: &str, router: Router) {
+    pub fn add(&mut self, prefix: &str, mut router: Router) {
+        let config = self.config.clone();
+        let f = move |endpoint: &mut Endpoint| endpoint.add_config(&config);
+        router.routes.for_each(&f);
+
         self.routes.merge(prefix, router.routes);
     }
 
@@ -224,7 +255,7 @@ impl Router {
     {
         let params = params.into();
         let parser = params.parser;
-        let mut endpoint = self.routes.remove(params.prefix).unwrap_or_else(Endpoint::new);
+        let mut endpoint = self.routes.remove(params.prefix).unwrap_or_else(|| Endpoint::with_config(self.config.clone()));
         let added = endpoint.add(method, parser.expected_params(), Box::new(move |request, prefix_len| {
             let params = match parser.parse(request.uri(), prefix_len) {
                 Ok(params) => params,
