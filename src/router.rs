@@ -141,6 +141,31 @@ impl Endpoint {
     }
 
     pub fn handle(&self, m: Method, req: hyper::Request, prefix: usize) -> HandlerResult {
+        if self.config.extra_headers.is_empty() {
+            Box::new(self.handle_internal(m, req, prefix))
+        } else {
+            let extra_headers = self.config.extra_headers.clone();
+            Box::new(self.handle_internal(m, req, prefix).map(move |mut response| {
+                {
+                    let mut headers = response.headers_mut();
+                    for (name, val) in extra_headers {
+                        // Don't override headers that were provided with the response.
+                        if headers.get_raw(name).is_none() {
+                            headers.set_raw(name, val);
+                        }
+                    }
+                }
+                response
+            }))
+        }
+    }
+
+    fn handle_internal(&self, m: Method, req: hyper::Request, prefix: usize) -> future::Either<
+        HandlerResult,
+        future::FutureResult<hyper::Response, hyper::Error>,
+    > {
+        use self::future::Either;
+
         let expected = {
             let path = &req.path()[prefix..];
             if path.is_empty() {
@@ -164,20 +189,20 @@ impl Endpoint {
                         continue;
                     }
 
-                    return handler(req, prefix);
+                    return Either::A(handler(req, prefix));
                 },
             }
         }
 
         if method_found {
-            Box::new(future::ok(Error::not_found("Unable to find a handler.").into()))
+            Either::B(future::ok(Error::not_found("Unable to find a handler.").into()))
         } else if m == Method::Head && self.config.handle_head {
-            Box::new(self.handle(Method::Get, req, prefix).map(|mut response| {
+            Either::A(Box::new(self.handle_internal(Method::Get, req, prefix).map(|mut response| {
                 response.set_body(vec![]);
                 response
-            }))
+            })))
         } else {
-            Box::new(future::ok(Error::method_not_allowed(
+            Either::B(future::ok(Error::method_not_allowed(
                 format!("Method {} is not allowed.", m),
                 format!("Allowed methods: {}", self.allowed_methods())
             ).into()))

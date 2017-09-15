@@ -25,7 +25,7 @@ pub use request::Request;
 pub use response::Response;
 pub use router::Router;
 pub use server::Listening;
-pub use hyper::{Uri, StatusCode};
+pub use hyper::{Uri, StatusCode, Headers};
 
 #[cfg(test)]
 mod tests {

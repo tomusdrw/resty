@@ -28,7 +28,7 @@ fn main() {
 
     println!("{}", server.routes());
 
-    let listening = server.bind("localhost:3000").unwrap();
+    let listening = server.bind("localhost:3001").unwrap();
     listening.wait()
 }
 
@@ -77,7 +77,13 @@ impl Products {
 impl Into<resty::Router> for Products {
     fn into(self) -> resty::Router {
         let self_ = ::std::sync::Arc::new(self);
-        let mut router = resty::Router::new();
+        let mut router = resty::Router::with_config(
+            resty::Config::new().handle_head(false).extra_headers({
+                let mut h = resty::Headers::new();
+                h.set_raw("X-Server", "resty");
+                h
+            })
+        );
 
         // no params
         let a = self_.clone();

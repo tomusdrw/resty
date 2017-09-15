@@ -15,6 +15,9 @@ categories = [
     "web-programming::http-server",
 ]
 
+[profile.release]
+debug = false
+
 [dependencies]
 arrayvec = "0.4"
 futures = "0.1"
