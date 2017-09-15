@@ -23,7 +23,6 @@ impl<T: serde::Serialize> From<T> for Response {
             Ok(serialized) => {
                 let response = hyper::Response::new()
                     .with_status(hyper::StatusCode::Ok)
-                    // TODO [ToDr] Configure additional headers?
                     .with_header(header::ContentType::json())
                     .with_body(serialized);
                 Response { response }

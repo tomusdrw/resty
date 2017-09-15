@@ -5,6 +5,7 @@ type InternalHeaders = Vec<(String, Vec<Vec<u8>>)>;
 #[derive(Debug, Default, Clone)]
 pub struct Config {
     handle_head: Option<bool>,
+    handle_options: Option<bool>,
     extra_headers: Option<InternalHeaders>,
 }
 
@@ -25,6 +26,12 @@ impl Config {
     /// Set to false if you want to disable autohandling of HEAD requests.
     pub fn handle_head<T: Into<Option<bool>>>(mut self, handle_head: T) -> Self {
         self.handle_head = handle_head.into();
+        self
+    }
+
+    /// Set to false if you want to disable autohandling of OPTIONS requests.
+    pub fn handle_options<T: Into<Option<bool>>>(mut self, handle_options: T) -> Self {
+        self.handle_options = handle_options.into();
         self
     }
 
@@ -49,6 +56,7 @@ impl Config {
     pub fn add(&mut self, other: &Config) {
         let other = other.to_owned();
         self.handle_head = self.handle_head.or(other.handle_head);
+        self.handle_options = self.handle_options.or(other.handle_options);
         self.extra_headers = self.extra_headers.take().or(other.extra_headers);
     }
 
@@ -58,6 +66,7 @@ impl Config {
 
         MaterializedConfig {
             handle_head: self.handle_head.clone().unwrap_or(base.handle_head),
+            handle_options: self.handle_options.clone().unwrap_or(base.handle_options),
             extra_headers: self.extra_headers.clone().unwrap_or(base.extra_headers),
         }
     }
@@ -66,6 +75,7 @@ impl Config {
 #[derive(Debug)]
 pub(crate) struct MaterializedConfig {
     pub handle_head: bool,
+    pub handle_options: bool,
     pub extra_headers: InternalHeaders,
 }
 
@@ -73,6 +83,7 @@ impl From<MaterializedConfig> for Config {
     fn from(conf: MaterializedConfig) -> Self {
         Config {
             handle_head: Some(conf.handle_head),
+            handle_options: Some(conf.handle_options),
             extra_headers: Some(conf.extra_headers),
         }
     }
@@ -82,6 +93,7 @@ impl Default for MaterializedConfig {
     fn default() -> Self {
         MaterializedConfig {
             handle_head: true,
+            handle_options: true,
             extra_headers: Default::default(),
         }
     }

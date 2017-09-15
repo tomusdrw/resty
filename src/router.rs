@@ -41,6 +41,21 @@ impl fmt::Display for Method {
     }
 }
 
+impl<'a> From<&'a Method> for hyper::Method {
+    fn from(method: &'a Method) -> Self {
+        use self::hyper::Method::*;
+        match *method {
+            Method::Head => Head,
+            Method::Get => Get,
+            Method::Post => Post,
+            Method::Delete => Delete,
+            Method::Put => Put,
+            Method::Patch => Patch,
+            Method::Options => Options,
+        }
+    }
+}
+
 impl<'a> From<&'a hyper::Method> for Method {
     fn from(method: &'a hyper::Method) -> Self {
         use self::Method::*;
@@ -83,6 +98,7 @@ pub struct Endpoint {
     handlers: [EndpointHandler; MAX_NUMBER_OF_ENDPOINTS],
     base_config: Config,
     config: MaterializedConfig,
+    allowed_methods: Vec<hyper::Method>,
 }
 
 impl fmt::Display for Endpoint {
@@ -112,6 +128,7 @@ impl Endpoint {
             handlers: [None, None, None, None, None, None],
             base_config,
             config,
+            allowed_methods: vec![],
         }
     }
 
@@ -134,6 +151,10 @@ impl Endpoint {
                 params,
                 handler,
             };
+            let m = (&method).into();
+            if !self.allowed_methods.contains(&m) {
+                self.allowed_methods.push(m);
+            }
             return true;
         }
 
@@ -150,7 +171,7 @@ impl Endpoint {
                     let mut headers = response.headers_mut();
                     for (name, val) in extra_headers {
                         // Don't override headers that were provided with the response.
-                        if headers.get_raw(name).is_none() {
+                        if headers.get_raw(&name).is_none() {
                             headers.set_raw(name, val);
                         }
                     }
@@ -183,6 +204,7 @@ impl Endpoint {
                     if method != &m {
                         continue;
                     }
+
                     method_found = true;
 
                     if params.0 != expected {
@@ -194,30 +216,44 @@ impl Endpoint {
             }
         }
 
-        if method_found {
-            Either::B(future::ok(Error::not_found("Unable to find a handler.").into()))
-        } else if m == Method::Head && self.config.handle_head {
-            Either::A(Box::new(self.handle_internal(Method::Get, req, prefix).map(|mut response| {
-                response.set_body(vec![]);
-                response
-            })))
-        } else {
-            Either::B(future::ok(Error::method_not_allowed(
-                format!("Method {} is not allowed.", m),
-                format!("Allowed methods: {}", self.allowed_methods())
-            ).into()))
-        }
-    }
+        match (m, method_found) {
+            (_, true) => {
+                Either::B(future::ok(Error::not_found("Unable to find a handler.").into()))
+            },
+            (Method::Head, false) if self.config.handle_head => {
+                Either::A(Box::new(self.handle_internal(Method::Get, req, prefix).map(|mut response| {
+                    response.set_body(vec![]);
+                    response
+                })))
+            },
+            (Method::Options, false) if self.config.handle_options => {
+                let allowed_methods = self.allowed_methods.clone();
+                let res = hyper::Response::new()
+                    .with_status(hyper::StatusCode::Ok)
+                    .with_header(hyper::header::Allow(allowed_methods));
+                Either::B(future::ok(res))
+            },
+            _ => {
+                let allowed_methods = self.allowed_methods.clone();
+                let allowed_str = {
+                    let mut allowed_str = "Allowed methods: ".to_owned();
+                    for method in &allowed_methods {
+                        allowed_str += &format!("{}, ", method);
+                    }
+                    // remove trailing comma.
+                    allowed_str.pop();
+                    allowed_str.pop();
+                    allowed_str
+                };
 
-    fn allowed_methods(&self) -> String {
-        let mut string = self.handlers.iter()
-            .filter_map(|h| match *h {
-                EndpointHandler::None => None,
-                EndpointHandler::Some { ref method, .. } => Some(format!("{}", method)),
-            })
-            .fold(String::new(), |acc, s| acc + &s + ",");
-        string.pop();
-        string
+                let mut res: hyper::Response = Error::method_not_allowed(
+                    format!("Method {} is not allowed.", m),
+                    format!("Allowed methods: {}", allowed_str)
+                ).into();
+                res.headers_mut().set(hyper::header::Allow(allowed_methods));
+                Either::B(future::ok(res))
+            }
+        }
     }
 }
 
